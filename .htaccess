@@ -1,0 +1,27 @@
+RewriteEngine On
+
+# Rewrite /matches and /matches/ to matches.php
+RewriteRule ^matches/?$ matches.php [L,QSA]
+
+# Redirect /matches/id to matches.php?id=id
+RewriteRule ^matches/([0-9]+)$ matches.php?id=$1 [L,QSA]
+
+
+# Redirect /matches/id to matches.php?id=id
+RewriteRule ^manageteam_api/?$ manageteam_api.php [L,QSA]
+
+# Redirect /matches/id to matches.php?id=id
+RewriteRule ^manageteam_api/([0-9]+)$ manageteam_api.php?id=$1 [L,QSA]
+
+# Rewrite /addplayer and /addplayer/ to addplayer.php
+RewriteRule ^addplayer/?$ addplayer.php [L,QSA]
+
+# Redirect /addplayer/id to addplayer.php?id=id
+RewriteRule ^addplayer/([0-9]+)$ addplayer.php?id=$1 [L,QSA]
+
+# Rewrite /addplayer and /addplayer/ to addplayer.php
+RewriteRule ^matches_update/?$ matches_update.php [L,QSA]
+
+# Redirect /matches_update/id to matches_update.php?id=id
+RewriteRule ^matches_update/([0-9]+)$ matches_update.php?id=$1 [L,QSA]
+
