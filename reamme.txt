@@ -1,0 +1,24 @@
+
+http://localhost/api/matches/ -GET
+http://localhost/api/matches/{id} - GET - Single data
+http://localhost/api/matches/ - POST
+http://localhost/api/matches/{id} - DELETE
+http://localhost/api/matches_update/{id} - PUT OR PATCH // for UPDATE DATA
+
+
+http://localhost/api/addteam/ -GET
+http://localhost/api/addteam/{id} - GET - Single data
+http://localhost/api/addteam/ - POST
+http://localhost/api/addteam/{id} - DELETE
+http://localhost/api/team_update/{id} - PUT OR PATCH // for UPDATE DATA
+
+
+http://localhost/api/addplayer/ -GET
+http://localhost/api/addplayer/{id} - GET - Single data
+http://localhost/api/addplayer/ - POST
+http://localhost/api/addplayer/{id} - DELETE
+http://localhost/api/player_update/{id} - PUT OR PATCH // for UPDATE DATA
+
+
+
+

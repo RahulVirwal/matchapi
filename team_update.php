@@ -102,9 +102,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATC
     $data = parseFormData();
     $id_from_url = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
-    if ($id_from_url !== null && isset($data['name']) && isset($data['shortname'])) {
+    if ($id_from_url !== null && isset($data['team_name']) && isset($data['match_name']) && isset($data['shortname'])) {
         $id = $id_from_url;
-        $name = htmlspecialchars($data['name']);
+        $team_name = htmlspecialchars($data['team_name']);
+        $match_name = htmlspecialchars($data['match_name']);
         $shortname = htmlspecialchars($data['shortname']);
         $image = isset($data['image']) ? $data['image'] : null;
 
@@ -129,31 +130,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATC
         }
 
         try {
-            $updateFields = ["name = :name", "shortname = :shortname"];
-            $queryParams = ['name' => $name, 'shortname' => $shortname, 'id' => $id];
+            $updateFields = ["team_name = :team_name", "match_name = :match_name", "shortname = :shortname"];
+            $queryParams = ['team_name' => $team_name, 'match_name' => $match_name, 'shortname' => $shortname, 'id' => $id];
 
             if ($imagePath !== null) {
                 $updateFields[] = "image = :image";
                 $queryParams['image'] = $imagePath;
             }
 
-            $updateQuery = "UPDATE matches SET " . implode(', ', $updateFields) . " WHERE id = :id";
+            $updateQuery = "UPDATE manageteam SET " . implode(', ', $updateFields) . " WHERE id = :id";
             $stmt = $pdo->prepare($updateQuery);
 
             if ($stmt->execute($queryParams)) {
-                $stmt = $pdo->prepare("SELECT * FROM matches WHERE id = ?");
+                $stmt = $pdo->prepare("SELECT * FROM manageteam WHERE id = ?");
                 $stmt->execute([$id]);
-                $updatedMatch = $stmt->fetch();
+                $updatedTeam = $stmt->fetch();
 
                 // Provide full URL for the image in the response
-                if ($updatedMatch['image']) {
-                    $updatedMatch['image'] = $baseUrl . $updatedMatch['image'];
+                if ($updatedTeam['image']) {
+                    $updatedTeam['image'] = $baseUrl . $updatedTeam['image'];
                 }
 
-                echo json_encode(['success' => true, 'data' => $updatedMatch]);
+                echo json_encode(['success' => true, 'data' => $updatedTeam]);
             } else {
                 http_response_code(500);
-                echo json_encode(['error' => 'Failed to update match']);
+                echo json_encode(['error' => 'Failed to update team']);
             }
         } catch (PDOException $e) {
             http_response_code(500);
@@ -163,10 +164,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATC
         http_response_code(400);
         $errors = [];
         if ($id_from_url === null) {
-            $errors[] = "Missing or invalid match ID.";
+            $errors[] = "Missing or invalid team ID.";
         }
-        if (!isset($data['name'])) {
-            $errors[] = "Missing 'name' field in request body.";
+        if (!isset($data['team_name'])) {
+            $errors[] = "Missing 'team_name' field in request body.";
+        }
+        if (!isset($data['match_name'])) {
+            $errors[] = "Missing 'match_name' field in request body.";
         }
         if (!isset($data['shortname'])) {
             $errors[] = "Missing 'shortname' field in request body.";

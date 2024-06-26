@@ -37,15 +37,12 @@ function createUploadsDirectory() {
 // Function to parse form-data in a request (including files)
 function parseFormData() {
     $data = [];
-    parse_str(file_get_contents('php://input'), $parsedInput);
-
-    $data['match_name'] = $parsedInput['match_name'] ?? '';
-    $data['team_name'] = $parsedInput['team_name'] ?? '';
-    $data['shortname'] = $parsedInput['shortname'] ?? '';
-
-    
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-        createUploadsDirectory(); 
+    $data['match_name'] = $_POST['match_name'] ?? '';
+    $data['team_name'] = $_POST['team_name'] ?? '';
+    $data['shortname'] = $_POST['shortname'] ?? '';
+    // Check if file was uploaded
+    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+        createUploadsDirectory(); // Ensure uploads directory exists
         $fileTmpPath = $_FILES['image']['tmp_name'];
         $fileName = $_FILES['image']['name'];
         $fileSize = $_FILES['image']['size'];
@@ -53,14 +50,14 @@ function parseFormData() {
         $fileNameCmps = explode(".", $fileName);
         $fileExtension = strtolower(end($fileNameCmps));
 
-        
+        // Generate unique filename using MD5 hash
         $uniqueFileName = md5(uniqid()) . '.' . $fileExtension;
         $uploadFileDir = './uploads/';
         $destFilePath = $uploadFileDir . $uniqueFileName;
 
-        
+        // Move the uploaded file to a permanent location
         if (move_uploaded_file($fileTmpPath, $destFilePath)) {
-            $data['image'] = $uniqueFileName; 
+            $data['image'] = $uniqueFileName; // Store filename in data
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Failed to move uploaded file.']);
             exit;
@@ -70,65 +67,25 @@ function parseFormData() {
     return $data;
 }
 
-
+// Function to send JSON response
 function sendJsonResponse($status, $message, $data = null) {
     header('Content-Type: application/json');
     http_response_code($status);
 
-    
+    // If data includes an image field, prepend /api/uploads/ to the image path
     if ($data && isset($data['image'])) {
         $data['image'] = '/api/uploads/' . $data['image'];
     }
 
     echo json_encode(['status' => $message, 'data' => $data]);
-    exit;
 }
 
-
-function getIdFromRequest() {
-    $urlSegments = explode('/', $_SERVER['REQUEST_URI']);
-    foreach ($urlSegments as $segment) {
-        if (is_numeric($segment)) {
-            return intval($segment);
-        }
-    }
-    return null;
-}
-
-
-function validateFormData($data) {
-    $errors = [];
-
-    if (empty($data['match_name'])) {
-        $errors[] = 'Match name is required.';
-    } else {
-        
-        $stmt = $GLOBALS['pdo']->prepare('SELECT name FROM matches WHERE name = :name');
-        $stmt->execute(['name' => $data['match_name']]);
-        $match = $stmt->fetch();
-
-        if (!$match) {
-            $errors[] = 'Match name does not exist.';
-        }
-    }
-
-    if (empty($data['team_name'])) {
-        $errors[] = 'Team name is required.';
-    }
-
-    if (empty($data['shortname'])) {
-        $errors[] = 'Shortname is required.';
-    }
-
-    return $errors;
-}
-
-
+// Handle CRUD operations
 switch ($_SERVER['REQUEST_METHOD']) {
     case 'GET':
-
-        $id = getIdFromRequest();
-        if ($id) {
+        // Read manager team(s)
+        if (isset($_GET['id'])) {
+            $id = intval($_GET['id']);
             $stmt = $pdo->prepare('SELECT * FROM manageteam WHERE id = :id');
             $stmt->execute(['id' => $id]);
             $team = $stmt->fetch();
@@ -152,12 +109,17 @@ switch ($_SERVER['REQUEST_METHOD']) {
     case 'POST':
         // Create a new manager team
         $data = parseFormData();
-        $validationErrors = validateFormData($data);
+        
+        // Debugging: Output the parsed form data
+        error_log("Parsed form data: " . json_encode($data));
 
-        if (empty($validationErrors)) {
+        if (isset($data['match_name']) && isset($data['team_name']) && isset($data['shortname'])) {
             $stmt = $pdo->prepare('SELECT name FROM matches WHERE name = :name');
             $stmt->execute(['name' => $data['match_name']]);
             $match = $stmt->fetch();
+
+            // Debugging: Output the match result
+            error_log("Match result: " . json_encode($match));
 
             if ($match) {
                 $stmt = $pdo->prepare('INSERT INTO manageteam (match_name, team_name, shortname, image) VALUES (:match_name, :team_name, :shortname, :image)');
@@ -170,41 +132,53 @@ switch ($_SERVER['REQUEST_METHOD']) {
                 sendJsonResponse(404, 'error', 'Match name not found.');
             }
         } else {
-            sendJsonResponse(400, 'error', $validationErrors);
+            sendJsonResponse(400, 'error', 'Required data missing.');
         }
         break;
 
     case 'PUT':
-        $id = getIdFromRequest();
-        
-        $putData = parseFormData();
-        $validationErrors = validateFormData($putData);
+    case 'PATCH':
+        // Extract ID from URL
+        $urlSegments = explode('/', $_SERVER['REQUEST_URI']);
+        $id = intval(end($urlSegments)); // Assuming the ID is the last segment of the URL
 
-        if (empty($validationErrors)) {
-            $stmt = $pdo->prepare('UPDATE manageteam SET match_name = :match_name, team_name = :team_name, shortname = :shortname, image = :image WHERE id = :id');
-            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
-            $stmt->bindParam(':match_name', $putData['match_name'], PDO::PARAM_STR);
-            $stmt->bindParam(':team_name', $putData['team_name'], PDO::PARAM_STR);
-            $stmt->bindParam(':shortname', $putData['shortname'], PDO::PARAM_STR);
-            $stmt->bindParam(':image', $putData['image'], PDO::PARAM_STR);
+        // Update a manager team
+        $inputData = file_get_contents("php://input");
+        $putData = json_decode($inputData, true);
 
-            try {
-                if ($stmt->execute()) {
+        // Debugging: Output the raw input data and parsed form data
+        error_log("Raw input data: " . $inputData);
+        error_log("Parsed form data: " . json_encode($putData));
+
+        if ($id && isset($putData['match_name']) && isset($putData['team_name']) && isset($putData['shortname'])) {
+            $stmt = $pdo->prepare('SELECT name FROM matches WHERE name = :name');
+            $stmt->execute(['name' => $putData['match_name']]);
+            $match = $stmt->fetch();
+
+            // Debugging: Output the match result
+            error_log("Match result: " . json_encode($match));
+
+            if ($match) {
+                $stmt = $pdo->prepare('UPDATE manageteam SET match_name = :match_name, team_name = :team_name, shortname = :shortname, image = :image WHERE id = :id');
+                if ($stmt->execute(['id' => $id, 'match_name' => $putData['match_name'], 'team_name' => $putData['team_name'], 'shortname' => $putData['shortname'], 'image' => $putData['image']])) {
                     sendJsonResponse(200, 'success', 'Manager team updated successfully.');
                 } else {
                     sendJsonResponse(500, 'error', 'Failed to update manager team.');
                 }
-            } catch (\PDOException $e) {
-                sendJsonResponse(500, 'error', 'Database error: ' . $e->getMessage());
+            } else {
+                sendJsonResponse(404, 'error', 'Match name not found.');
             }
         } else {
-            sendJsonResponse(400, 'error', $validationErrors);
+            sendJsonResponse(400, 'error', 'Required data missing.');
         }
         break;
 
     case 'DELETE':
-        $id = getIdFromRequest();
+        // Extract ID from URL
+        $urlSegments = explode('/', $_SERVER['REQUEST_URI']);
+        $id = intval(end($urlSegments)); // Assuming the ID is the last segment of the URL
 
+        // Delete a manager team
         if ($id) {
             $stmt = $pdo->prepare('DELETE FROM manageteam WHERE id = :id');
             if ($stmt->execute(['id' => $id])) {
@@ -221,4 +195,5 @@ switch ($_SERVER['REQUEST_METHOD']) {
         sendJsonResponse(405, 'error', 'Method Not Allowed');
         break;
 }
+
 ?>

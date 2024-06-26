@@ -8,10 +8,10 @@ RewriteRule ^matches/([0-9]+)$ matches.php?id=$1 [L,QSA]
 
 
 # Redirect /matches/id to matches.php?id=id
-RewriteRule ^manageteam_api/?$ manageteam_api.php [L,QSA]
+RewriteRule ^addteam/?$ addteam.php [L,QSA]
 
 # Redirect /matches/id to matches.php?id=id
-RewriteRule ^manageteam_api/([0-9]+)$ manageteam_api.php?id=$1 [L,QSA]
+RewriteRule ^addteam/([0-9]+)$ addteam.php?id=$1 [L,QSA]
 
 # Rewrite /addplayer and /addplayer/ to addplayer.php
 RewriteRule ^addplayer/?$ addplayer.php [L,QSA]
@@ -24,4 +24,18 @@ RewriteRule ^matches_update/?$ matches_update.php [L,QSA]
 
 # Redirect /matches_update/id to matches_update.php?id=id
 RewriteRule ^matches_update/([0-9]+)$ matches_update.php?id=$1 [L,QSA]
+
+# Rewrite /addplayer and /addplayer/ to addplayer.php
+RewriteRule ^team_update/?$ team_update.php [L,QSA]
+
+# Redirect /team_update/id to team_update.php?id=id
+RewriteRule ^team_update/([0-9]+)$ team_update.php?id=$1 [L,QSA]
+
+# Rewrite /addplayer and /addplayer/ to addplayer.php
+RewriteRule ^player_update/?$ player_update.php [L,QSA]
+
+# Redirect /player_update/id to player_update.php?id=id
+RewriteRule ^player_update/([0-9]+)$ player_update.php?id=$1 [L,QSA]
+
+
 

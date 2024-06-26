@@ -39,7 +39,6 @@ function validateImage($file)
     }
     return true;
 }
-
 function saveImage($content, $filename)
 {
     global $uploadsDir;
@@ -53,7 +52,7 @@ function saveImage($content, $filename)
         return ['error' => 'Uploads directory is not writable.'];
     }
 
-    // Generate unique filename
+    // Generate unique encrypted filename
     $extension = pathinfo($filename, PATHINFO_EXTENSION);
     $encryptedFilename = md5(uniqid(rand(), true)) . '.' . $extension;
     $targetFile = $uploadsDir . $encryptedFilename;
@@ -65,6 +64,8 @@ function saveImage($content, $filename)
         return ['error' => 'Failed to save file.'];
     }
 }
+
+
 
 function parseFormData()
 {
@@ -102,23 +103,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATC
     $data = parseFormData();
     $id_from_url = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
-    if ($id_from_url !== null && isset($data['name']) && isset($data['shortname'])) {
+    if ($id_from_url !== null && isset($data['team_name']) && isset($data['match_name']) && isset($data['player_name']) && isset($data['player_shortname'])) {
         $id = $id_from_url;
-        $name = htmlspecialchars($data['name']);
-        $shortname = htmlspecialchars($data['shortname']);
-        $image = isset($data['image']) ? $data['image'] : null;
+        $team_name = htmlspecialchars($data['team_name']);
+        $match_name = htmlspecialchars($data['match_name']);
+        $player_name = htmlspecialchars($data['player_name']);
+        $player_shortname = htmlspecialchars($data['player_shortname']);
+        $player_image = isset($data['player_image']) ? $data['player_image'] : null;
 
         $imagePath = null; // Initialize image path variable
 
-        if ($image) {
-            $validationResult = validateImage($image);
+        if ($player_image) {
+            $validationResult = validateImage($player_image);
             if ($validationResult !== true) {
                 http_response_code(400);
                 echo json_encode(['error' => $validationResult]);
                 exit;
             }
 
-            $saveResult = saveImage($image['content'], $image['name']);
+            $saveResult = saveImage($player_image['content'], $player_image['name']);
             if (isset($saveResult['error'])) {
                 http_response_code(500);
                 echo json_encode(['error' => $saveResult['error']]);
@@ -129,31 +132,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATC
         }
 
         try {
-            $updateFields = ["name = :name", "shortname = :shortname"];
-            $queryParams = ['name' => $name, 'shortname' => $shortname, 'id' => $id];
+            $updateFields = ["team_name = :team_name", "match_name = :match_name", "player_name = :player_name", "player_shortname = :player_shortname"];
+            $queryParams = ['team_name' => $team_name, 'match_name' => $match_name, 'player_name' => $player_name, 'player_shortname' => $player_shortname, 'id' => $id];
 
             if ($imagePath !== null) {
-                $updateFields[] = "image = :image";
-                $queryParams['image'] = $imagePath;
+                $updateFields[] = "player_image = :player_image";
+                $queryParams['player_image'] = $imagePath;
             }
 
-            $updateQuery = "UPDATE matches SET " . implode(', ', $updateFields) . " WHERE id = :id";
+            $updateQuery = "UPDATE players SET " . implode(', ', $updateFields) . " WHERE id = :id";
             $stmt = $pdo->prepare($updateQuery);
 
             if ($stmt->execute($queryParams)) {
-                $stmt = $pdo->prepare("SELECT * FROM matches WHERE id = ?");
+                $stmt = $pdo->prepare("SELECT * FROM players WHERE id = ?");
                 $stmt->execute([$id]);
-                $updatedMatch = $stmt->fetch();
+                $updatedPlayer = $stmt->fetch();
 
                 // Provide full URL for the image in the response
-                if ($updatedMatch['image']) {
-                    $updatedMatch['image'] = $baseUrl . $updatedMatch['image'];
+                if ($updatedPlayer['player_image']) {
+                    $updatedPlayer['player_image'] = $baseUrl . $updatedPlayer['player_image'];
                 }
 
-                echo json_encode(['success' => true, 'data' => $updatedMatch]);
+                echo json_encode(['success' => true, 'data' => $updatedPlayer]);
             } else {
                 http_response_code(500);
-                echo json_encode(['error' => 'Failed to update match']);
+                echo json_encode(['error' => 'Failed to update player']);
             }
         } catch (PDOException $e) {
             http_response_code(500);
@@ -163,13 +166,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATC
         http_response_code(400);
         $errors = [];
         if ($id_from_url === null) {
-            $errors[] = "Missing or invalid match ID.";
+            $errors[] = "Missing or invalid player ID.";
         }
-        if (!isset($data['name'])) {
-            $errors[] = "Missing 'name' field in request body.";
+        if (!isset($data['team_name'])) {
+            $errors[] = "Missing 'team_name' field in request body.";
         }
-        if (!isset($data['shortname'])) {
-            $errors[] = "Missing 'shortname' field in request body.";
+        if (!isset($data['match_name'])) {
+            $errors[] = "Missing 'match_name' field in request body.";
+        }
+        if (!isset($data['player_name'])) {
+            $errors[] = "Missing 'player_name' field in request body.";
+        }
+        if (!isset($data['player_shortname'])) {
+            $errors[] = "Missing 'player_shortname' field in request body.";
         }
         echo json_encode(['error' => implode(". ", $errors)]);
     }
