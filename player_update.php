@@ -1,10 +1,12 @@
 <?php
+include 'database/database.php';
+
+
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: PUT, PATCH, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 
-include 'database/database.php';
 
 $baseUrl = '/api/uploads/';
 $uploadsDir = __DIR__ . '/uploads/';
@@ -17,7 +19,7 @@ try {
     exit;
 }
 
-function validateImage($file)
+function validateImage1($file)
 {
     $allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
     $finfo = new finfo(FILEINFO_MIME_TYPE);
@@ -28,7 +30,7 @@ function validateImage($file)
     }
     return true;
 }
-function saveImage($content, $filename)
+function saveImage1($content, $filename)
 {
     global $uploadsDir;
 
@@ -56,7 +58,7 @@ function saveImage($content, $filename)
 
 
 
-function parseFormData()
+function parseFormData1()
 {
     $rawData = file_get_contents("php://input");
     preg_match('/boundary=(.*)$/', $_SERVER['CONTENT_TYPE'], $matches);
@@ -89,7 +91,7 @@ function parseFormData()
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATCH') {
-    $data = parseFormData();
+    $data = parseFormData1();
     $id_from_url = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
     if ($id_from_url !== null && isset($data['team_name']) && isset($data['match_name']) && isset($data['player_name']) && isset($data['player_shortname'])) {
@@ -103,14 +105,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT' || $_SERVER['REQUEST_METHOD'] === 'PATC
         $imagePath = null; // Initialize image path variable
 
         if ($player_image) {
-            $validationResult = validateImage($player_image);
+            $validationResult = validateImage1($player_image);
             if ($validationResult !== true) {
                 http_response_code(400);
                 echo json_encode(['error' => $validationResult]);
                 exit;
             }
 
-            $saveResult = saveImage($player_image['content'], $player_image['name']);
+            $saveResult = saveImage1($player_image['content'], $player_image['name']);
             if (isset($saveResult['error'])) {
                 http_response_code(500);
                 echo json_encode(['error' => $saveResult['error']]);

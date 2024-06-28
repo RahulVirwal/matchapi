@@ -2,9 +2,26 @@
 
 include 'database/database.php';
 
+// Set headers for CORS and content type
+header("Content-Type: application/json");
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: PUT, PATCH, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type");
+
+$baseUrl = '/api/uploads/';
+$uploadsDir = __DIR__ . '/uploads/';
+
+try {
+    $pdo = new PDO($dsn, $user, $pass, $options);
+} catch (\PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]);
+    exit;
+}
+
 // Function to create the uploads directory if it does not exist
 function createUploadsDirectory() {
-    $uploadsDir = './uploads';
+    global $uploadsDir;
     if (!is_dir($uploadsDir)) {
         if (!mkdir($uploadsDir, 0755, true)) {
             echo json_encode(['status' => 'error', 'message' => 'Failed to create uploads directory.']);
@@ -59,6 +76,85 @@ function sendJsonResponse($status, $message, $data = null) {
     echo json_encode(['status' => $message, 'data' => $data]);
 }
 
+// Helper functions for file validation and saving
+function validateImage($file)
+{
+    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $fileType = $finfo->buffer($file['content']);
+
+    if (!in_array($fileType, $allowedTypes)) {
+        return "Invalid file type. Only JPG, PNG, and GIF types are accepted.";
+    }
+    return true;
+}
+
+function saveImage($content, $filename)
+{
+    global $uploadsDir;
+
+    // Ensure uploads directory exists and is writable
+    if (!is_dir($uploadsDir)) {
+        if (!mkdir($uploadsDir, 0777, true)) {
+            return ['error' => 'Failed to create uploads directory.'];
+        }
+    } elseif (!is_writable($uploadsDir)) {
+        return ['error' => 'Uploads directory is not writable.'];
+    }
+
+    // Generate unique filename
+    $extension = pathinfo($filename, PATHINFO_EXTENSION);
+    $encryptedFilename = md5(uniqid(rand(), true)) . '.' . $extension;
+    $targetFile = $uploadsDir . $encryptedFilename;
+
+    // Save file content to the target directory
+    if (file_put_contents($targetFile, $content)) {
+        return ['success' => true, 'filename' => $encryptedFilename];
+    } else {
+        return ['error' => 'Failed to save file.'];
+    }
+}
+
+// Function to parse form-data for PUT/PATCH requests
+function parseFormData1()
+{
+    $rawData = file_get_contents("php://input");
+    preg_match('/boundary=(.*)$/', $_SERVER['CONTENT_TYPE'], $matches);
+    $boundary = $matches[1];
+    $blocks = preg_split("/-+$boundary/", $rawData);
+    array_pop($blocks);
+
+    $data = [];
+
+    foreach ($blocks as $block) {
+        if (empty($block)) continue;
+
+        list($header, $body) = explode("\r\n\r\n", trim($block), 2);
+        preg_match('/name="([^"]+)"/', $header, $matches);
+        $name = $matches[1];
+
+        if (strpos($header, 'filename=') !== false) {
+            preg_match('/filename="([^"]+)"/', $header, $matches);
+            $filename = $matches[1];
+            $data[$name] = [
+                'content' => $body,
+                'name' => $filename
+            ];
+        } else {
+            $data[$name] = trim($body);
+        }
+    }
+
+    return $data;
+}
+
+// Function to check if match_name exists in the matches table
+function matchExists($match_name, $pdo) {
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM matches WHERE name = :name');
+    $stmt->execute(['name' => $match_name]);
+    return $stmt->fetchColumn() > 0;
+}
+
 // Handle CRUD operations
 switch ($_SERVER['REQUEST_METHOD']) {
     case 'GET':
@@ -88,27 +184,18 @@ switch ($_SERVER['REQUEST_METHOD']) {
     case 'POST':
         // Create a new manager team
         $data = parseFormData();
-        
-        // Debugging: Output the parsed form data
-        error_log("Parsed form data: " . json_encode($data));
 
         if (isset($data['match_name']) && isset($data['team_name']) && isset($data['shortname'])) {
-            $stmt = $pdo->prepare('SELECT name FROM matches WHERE name = :name');
-            $stmt->execute(['name' => $data['match_name']]);
-            $match = $stmt->fetch();
-
-            // Debugging: Output the match result
-            error_log("Match result: " . json_encode($match));
-
-            if ($match) {
-                $stmt = $pdo->prepare('INSERT INTO manageteam (match_name, team_name, shortname, image) VALUES (:match_name, :team_name, :shortname, :image)');
-                if ($stmt->execute(['match_name' => $data['match_name'], 'team_name' => $data['team_name'], 'shortname' => $data['shortname'], 'image' => $data['image']])) {
-                    sendJsonResponse(201, 'success', 'Manager team created successfully.');
-                } else {
-                    sendJsonResponse(500, 'error', 'Failed to create manager team.');
-                }
-            } else {
+            if (!matchExists($data['match_name'], $pdo)) {
                 sendJsonResponse(404, 'error', 'Match name not found.');
+                exit;
+            }
+
+            $stmt = $pdo->prepare('INSERT INTO manageteam (match_name, team_name, shortname, image) VALUES (:match_name, :team_name, :shortname, :image)');
+            if ($stmt->execute(['match_name' => $data['match_name'], 'team_name' => $data['team_name'], 'shortname' => $data['shortname'], 'image' => $data['image']])) {
+                sendJsonResponse(201, 'success', 'Manager team created successfully.');
+            } else {
+                sendJsonResponse(500, 'error', 'Failed to create manager team.');
             }
         } else {
             sendJsonResponse(400, 'error', 'Required data missing.');
@@ -117,38 +204,87 @@ switch ($_SERVER['REQUEST_METHOD']) {
 
     case 'PUT':
     case 'PATCH':
-        // Extract ID from URL
-        $urlSegments = explode('/', $_SERVER['REQUEST_URI']);
-        $id = intval(end($urlSegments)); // Assuming the ID is the last segment of the URL
-
         // Update a manager team
-        $inputData = file_get_contents("php://input");
-        $putData = json_decode($inputData, true);
+        $data = parseFormData1();
+        $id_from_url = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
-        // Debugging: Output the raw input data and parsed form data
-        error_log("Raw input data: " . $inputData);
-        error_log("Parsed form data: " . json_encode($putData));
-
-        if ($id && isset($putData['match_name']) && isset($putData['team_name']) && isset($putData['shortname'])) {
-            $stmt = $pdo->prepare('SELECT name FROM matches WHERE name = :name');
-            $stmt->execute(['name' => $putData['match_name']]);
-            $match = $stmt->fetch();
-
-            // Debugging: Output the match result
-            error_log("Match result: " . json_encode($match));
-
-            if ($match) {
-                $stmt = $pdo->prepare('UPDATE manageteam SET match_name = :match_name, team_name = :team_name, shortname = :shortname, image = :image WHERE id = :id');
-                if ($stmt->execute(['id' => $id, 'match_name' => $putData['match_name'], 'team_name' => $putData['team_name'], 'shortname' => $putData['shortname'], 'image' => $putData['image']])) {
-                    sendJsonResponse(200, 'success', 'Manager team updated successfully.');
-                } else {
-                    sendJsonResponse(500, 'error', 'Failed to update manager team.');
-                }
-            } else {
+        if ($id_from_url && isset($data['team_name']) && isset($data['match_name']) && isset($data['shortname'])) {
+            if (!matchExists($data['match_name'], $pdo)) {
                 sendJsonResponse(404, 'error', 'Match name not found.');
+                exit;
+            }
+
+            $team_name = $data['team_name'];
+            $match_name = $data['match_name'];
+            $shortname = $data['shortname'];
+            $id = $id_from_url;
+
+            $imagePath = null;
+            if (isset($data['image'])) {
+                $file = $data['image'];
+                $validationResult = validateImage($file);
+                if ($validationResult !== true) {
+                    http_response_code(400);
+                    echo json_encode(['error' => $validationResult]);
+                    exit;
+                }
+                $saveResult = saveImage($file['content'], $file['name']);
+                if (isset($saveResult['error'])) {
+                    http_response_code(500);
+                    echo json_encode(['error' => $saveResult['error']]);
+                    exit;
+                }
+
+                $imagePath = $saveResult['filename'];
+            }
+
+            try {
+                $updateFields = ["team_name = :team_name", "match_name = :match_name", "shortname = :shortname"];
+                $queryParams = ['team_name' => $team_name, 'match_name' => $match_name, 'shortname' => $shortname, 'id' => $id];
+
+                if ($imagePath !== null) {
+                    $updateFields[] = "image = :image";
+                    $queryParams['image'] = $imagePath;
+                }
+
+                $updateQuery = "UPDATE manageteam SET " . implode(', ', $updateFields) . " WHERE id = :id";
+                $stmt = $pdo->prepare($updateQuery);
+
+                if ($stmt->execute($queryParams)) {
+                    $stmt = $pdo->prepare("SELECT * FROM manageteam WHERE id = ?");
+                    $stmt->execute([$id]);
+                    $updatedTeam = $stmt->fetch();
+
+                    // Provide full URL for the image in the response
+                    if ($updatedTeam['image']) {
+                        $updatedTeam['image'] = $baseUrl . $updatedTeam['image'];
+                    }
+
+                    echo json_encode(['success' => true, 'data' => $updatedTeam]);
+                } else {
+                    http_response_code(500);
+                    echo json_encode(['error' => 'Failed to update team']);
+                }
+            } catch (PDOException $e) {
+                http_response_code(500);
+                echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
             }
         } else {
-            sendJsonResponse(400, 'error', 'Required data missing.');
+            http_response_code(400);
+            $errors = [];
+            if ($id_from_url === null) {
+                $errors[] = "Missing or invalid team ID.";
+            }
+            if (!isset($data['team_name'])) {
+                $errors[] = "Missing 'team_name' field in request body.";
+            }
+            if (!isset($data['match_name'])) {
+                $errors[] = "Missing 'match_name' field in request body.";
+            }
+            if (!isset($data['shortname'])) {
+                $errors[] = "Missing 'shortname' field in request body.";
+            }
+            echo json_encode(['error' => implode(". ", $errors)]);
         }
         break;
 
