@@ -1,8 +1,8 @@
 -- Create the database if it does not exist
-CREATE DATABASE IF NOT EXISTS match_db;
+CREATE DATABASE IF NOT EXISTS if0_36804223_match_db;
 
 -- Use the created database
-USE match_db;
+USE if0_36804223_match_db;
 
 -- Drop tables if they exist (for demonstration purposes)
 DROP TABLE IF EXISTS players;

@@ -1,20 +1,6 @@
 <?php
 
-$host = 'localhost';
-$db = 'match_db';
-$user = 'root';
-$pass = '';
-$charset = 'utf8mb4';
-
-// Set up the database connection with MySQLi
-$mysqli = new mysqli($host, $user, $pass, $db);
-
-// Check connection
-if ($mysqli->connect_error) {
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Database connection failed: ' . $mysqli->connect_error]);
-    exit;
-}
+include 'database/database.php';
 
 // Set headers to allow cross-origin resource sharing (CORS)
 header("Access-Control-Allow-Origin: *");
@@ -25,8 +11,8 @@ header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers
 // Function to sanitize input data
 function sanitizeInput($data)
 {
-    global $mysqli;
-    return htmlspecialchars(strip_tags($mysqli->real_escape_string($data)));
+    global $pdo;
+    return htmlspecialchars(strip_tags($data));
 }
 
 // Function to generate a unique encrypted filename to prevent overwriting
@@ -41,7 +27,7 @@ function generateUniqueFilename($uploadDir, $filename)
 // Function to handle POST requests (Create a new player)
 function createPlayer()
 {
-    global $mysqli;
+    global $pdo;
 
     // Check if form data is passed correctly
     if (empty($_POST['team_name']) || empty($_POST['match_name']) || empty($_POST['player_name']) || empty($_POST['player_shortname']) || empty($_FILES['player_image'])) {
@@ -75,8 +61,6 @@ function createPlayer()
         exit;
     }
 
-    $uploadFile = $uploadDir . basename($fileName);
-
     // Check file size (max 5MB)
     $maxFileSize = 5 * 1024 * 1024; // 5MB in bytes
     if ($fileSize > $maxFileSize) {
@@ -98,14 +82,11 @@ function createPlayer()
     $player_image = '/api/uploads/' . $uniqueFilename; // Store the path with encrypted filename
 
     // Check if the team_name exists in manageteam table
-    $stmt = $mysqli->prepare("SELECT COUNT(*) FROM manageteam WHERE team_name = ? AND match_name = ?");
-    $stmt->bind_param("ss", $team_name, $match_name);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stmt->close();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM manageteam WHERE team_name = ? AND match_name = ?");
+    $stmt->execute([$team_name, $match_name]);
+    $count = $stmt->fetchColumn();
 
-    if ($count === 0) {
+    if ($count == 0) {
         http_response_code(404);
         echo json_encode(['error' => 'Team name or match name not found in manageteam table']);
         exit;
@@ -113,32 +94,25 @@ function createPlayer()
 
     // Insert player into players table
     $sql = "INSERT INTO players (team_name, match_name, player_name, player_shortname, player_image) VALUES (?, ?, ?, ?, ?)";
-    $stmt = $mysqli->prepare($sql);
-    $stmt->bind_param("sssss", $team_name, $match_name, $player_name, $player_shortname, $player_image);
-
-    if ($stmt->execute()) {
-        $newPlayerId = $mysqli->insert_id;
+    $stmt = $pdo->prepare($sql);
+    if ($stmt->execute([$team_name, $match_name, $player_name, $player_shortname, $player_image])) {
+        $newPlayerId = $pdo->lastInsertId();
         echo json_encode(['id' => $newPlayerId, 'message' => 'Player created successfully']);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to create player: ' . $mysqli->error]);
+        echo json_encode(['error' => 'Failed to create player']);
     }
 }
-
 
 // Function to handle GET requests (Retrieve players)
 function getPlayers($id = null)
 {
-    global $mysqli;
+    global $pdo;
     if ($id === null) {
         $sql = "SELECT * FROM players";
-        $result = $mysqli->query($sql);
-
-        if ($result->num_rows > 0) {
-            $players = [];
-            while ($row = $result->fetch_assoc()) {
-                $players[] = $row;
-            }
+        $stmt = $pdo->query($sql);
+        $players = $stmt->fetchAll();
+        if ($players) {
             echo json_encode($players);
         } else {
             http_response_code(404);
@@ -146,25 +120,22 @@ function getPlayers($id = null)
         }
     } else {
         // Fetch single player by ID
-        $stmt = $mysqli->prepare("SELECT * FROM players WHERE id = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        if ($result->num_rows === 1) {
-            $player = $result->fetch_assoc();
+        $stmt = $pdo->prepare("SELECT * FROM players WHERE id = ?");
+        $stmt->execute([$id]);
+        $player = $stmt->fetch();
+        if ($player) {
             echo json_encode($player);
         } else {
             http_response_code(404);
             echo json_encode(['error' => 'Player not found']);
         }
-        $stmt->close();
     }
 }
 
 // Function to handle PUT requests (Update a player)
 function updatePlayer($id)
 {
-    global $mysqli;
+    global $pdo;
 
     // Check if form data is passed correctly
     if (empty($_POST['team_name']) || empty($_POST['match_name']) || empty($_POST['player_name']) || empty($_POST['player_shortname'])) {
@@ -180,14 +151,11 @@ function updatePlayer($id)
     $player_shortname = sanitizeInput($_POST['player_shortname']);
 
     // Check if the team_name exists in manageteam table
-    $stmt = $mysqli->prepare("SELECT COUNT(*) FROM manageteam WHERE team_name = ? AND match_name = ?");
-    $stmt->bind_param("ss", $team_name, $match_name);
-    $stmt->execute();
-    $stmt->bind_result($count);
-    $stmt->fetch();
-    $stmt->close();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM manageteam WHERE team_name = ? AND match_name = ?");
+    $stmt->execute([$team_name, $match_name]);
+    $count = $stmt->fetchColumn();
 
-    if ($count === 0) {
+    if ($count == 0) {
         http_response_code(404);
         echo json_encode(['error' => 'Team name or match name not found in manageteam table']);
         exit;
@@ -195,7 +163,7 @@ function updatePlayer($id)
 
     // Process player image update if provided
     if (!empty($_FILES['player_image'])) {
-        $uploadDir = '/api/uploads/';
+        $uploadDir = 'uploads/';
 
         // Validate and handle file upload
         $fileName = $_FILES['player_image']['name'];
@@ -210,8 +178,6 @@ function updatePlayer($id)
             echo json_encode(['error' => 'Only JPG, PNG, and GIF files are allowed']);
             exit;
         }
-
-        $uploadFile = $uploadDir . basename($fileName);
 
         // Check file size (max 5MB)
         $maxFileSize = 5 * 1024 * 1024; // 5MB in bytes
@@ -231,65 +197,60 @@ function updatePlayer($id)
             exit;
         }
 
-        $player_image = $uploadFile;
+        $player_image = '/api/uploads/' . $uniqueFilename;
 
         // Update player in players table with new image path
         $sql = "UPDATE players SET team_name = ?, match_name = ?, player_name = ?, player_shortname = ?, player_image = ? WHERE id = ?";
-        $stmt = $mysqli->prepare($sql);
-        $stmt->bind_param("sssssi", $team_name, $match_name, $player_name, $player_shortname, $player_image, $id);
+        $stmt = $pdo->prepare($sql);
+        if ($stmt->execute([$team_name, $match_name, $player_name, $player_shortname, $player_image, $id])) {
+            echo json_encode(['message' => 'Player updated successfully']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to update player']);
+        }
     } else {
         // Update player in players table without changing the image
         $sql = "UPDATE players SET team_name = ?, match_name = ?, player_name = ?, player_shortname = ? WHERE id = ?";
-        $stmt = $mysqli->prepare($sql);
-        $stmt->bind_param("ssssi", $team_name, $match_name, $player_name, $player_shortname, $id);
+        $stmt = $pdo->prepare($sql);
+        if ($stmt->execute([$team_name, $match_name, $player_name, $player_shortname, $id])) {
+            echo json_encode(['message' => 'Player updated successfully']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to update player']);
+        }
     }
-
-    if ($stmt->execute()) {
-        echo json_encode(['message' => 'Player updated successfully']);
-    } else {
-        http_response_code(500);
-        echo json_encode(['error' => 'Failed to update player: ' . $mysqli->error]);
-    }
-
-    $stmt->close();
 }
 
 // Function to handle DELETE requests (Delete a player)
 function deletePlayer($id)
 {
-    global $mysqli;
+    global $pdo;
 
     // Fetch player image path for deletion
-    $stmt = $mysqli->prepare("SELECT player_image FROM players WHERE id = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $stmt->bind_result($player_image);
-    $stmt->fetch();
-    $stmt->close();
+    $stmt = $pdo->prepare("SELECT player_image FROM players WHERE id = ?");
+    $stmt->execute([$id]);
+    $player = $stmt->fetch();
 
-    if (empty($player_image)) {
+    if (!$player) {
         http_response_code(404);
         echo json_encode(['error' => 'Player not found']);
         exit;
     }
 
-    // Delete player from players table
-    $stmt = $mysqli->prepare("DELETE FROM players WHERE id = ?");
-    $stmt->bind_param("i", $id);
+    $player_image = $player['player_image'];
 
-    if ($stmt->execute()) {
+    // Delete player from players table
+    $stmt = $pdo->prepare("DELETE FROM players WHERE id = ?");
+    if ($stmt->execute([$id])) {
         // Delete the player image file
         if (file_exists($player_image)) {
             unlink($player_image);
         }
-
         echo json_encode(['message' => 'Player deleted successfully']);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => 'Failed to delete player: ' . $mysqli->error]);
+        echo json_encode(['error' => 'Failed to delete player']);
     }
-
-    $stmt->close();
 }
 
 // Handle incoming HTTP requests
@@ -324,6 +285,4 @@ switch ($method) {
         echo json_encode(['error' => 'Method not allowed']);
         break;
 }
-
-$mysqli->close();
 ?>

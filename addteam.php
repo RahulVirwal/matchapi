@@ -1,27 +1,6 @@
 <?php
 
-// Database credentials
-$host = 'localhost';
-$db = 'match_db';
-$user = 'root';
-$pass = '';
-$charset = 'utf8mb4';
-
-// Set up the database connection
-$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
-$options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES   => false,
-];
-
-try {
-    $pdo = new PDO($dsn, $user, $pass, $options);
-} catch (\PDOException $e) {
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Database connection failed: ' . $e->getMessage()]);
-    exit;
-}
+include 'database/database.php';
 
 // Function to create the uploads directory if it does not exist
 function createUploadsDirectory() {
